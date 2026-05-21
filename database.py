@@ -10,16 +10,13 @@ def get_connection():
 
 
 def init_db():
-    """初始化数据库：创建规则表"""
+    """初始化数据库：创建规则表（如果不存在）"""
     conn = get_connection()
     cursor = conn.cursor()
 
-    # 先删除旧表（如果有结构问题）
-    cursor.execute("DROP TABLE IF EXISTS project_rules")
-
-    # 重新创建表
+    # 改为 CREATE TABLE IF NOT EXISTS
     cursor.execute('''
-        CREATE TABLE project_rules (
+        CREATE TABLE IF NOT EXISTS project_rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_name TEXT NOT NULL,
             module_name TEXT NOT NULL,
@@ -37,7 +34,6 @@ def init_db():
     conn.commit()
     conn.close()
     print("✅ 数据库初始化完成")
-
 
 def get_rule(project_name, module_name):
     """获取指定项目和模块的规则"""
