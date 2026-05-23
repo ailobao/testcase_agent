@@ -6,8 +6,7 @@ import pandas as pd
 from datetime import datetime
 from database import get_rule
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from common import llm, call_llm_with_retry, data_folder_path, clean_name
-
+from common import llm, call_llm_with_retry, data_folder_path, clean_name, deduplicate_test_cases
 
 ANALYSIS_PROMPT = """你是AI系统测试专家。请对以下AI系统进行四大维度分析。
 
@@ -103,12 +102,14 @@ def get_dimension_prompt(dimension, project, module, description, max_num, merge
 
 
 def generate_analysis(project, module, description):
+    """生成四大维度分析报告"""
     prompt = ANALYSIS_PROMPT.format(project=project, module=module, description=description)
     response = call_llm_with_retry(prompt)
     return response.content
 
 
 def generate_dimension_cases(project, module, description, dimension, max_num, merged_rules=""):
+    """生成单个维度的测试用例"""
     prompt = get_dimension_prompt(dimension, project, module, description, max_num, merged_rules)
     response = call_llm_with_retry(prompt)
     content = response.content
@@ -117,44 +118,65 @@ def generate_dimension_cases(project, module, description, dimension, max_num, m
 
 
 def parse_ai_markdown_cases(markdown_content, case_type):
+    """解析AI测试用例的Markdown内容"""
     cases = []
     blocks = re.split(r'\n##\s+', markdown_content)
+
     for block in blocks:
         if not block.strip():
             continue
+
         case = {
-            "测试ID": "", "测试标题": "", "测试类型": case_type, "优先级": "P1",
-            "关联需求": "", "前置条件": "", "测试数据": "", "测试步骤": "", "预期结果": "",
-            "实际结果": "", "执行人": ""
+            "测试ID": "",
+            "测试标题": "",
+            "测试类型": case_type,
+            "优先级": "P1",
+            "关联需求": "",
+            "前置条件": "",
+            "测试数据": "",
+            "测试步骤": "",
+            "预期结果": "",
+            "实际结果": "",
+            "执行人": ""
         }
+
         full_text = block
+
+        # 提取各个字段
         id_match = re.search(r'-\s*测试ID[：:]\s*([^\n]+)', full_text)
         if id_match:
             case["测试ID"] = id_match.group(1).strip()
+
         title_match = re.search(r'-\s*测试标题[：:]\s*([^\n]+)', full_text)
         if title_match:
             case["测试标题"] = title_match.group(1).strip()
+
         type_match = re.search(r'-\s*测试类型[：:]\s*([^\n]+)', full_text)
         if type_match:
             case["测试类型"] = type_match.group(1).strip()
+
         priority_match = re.search(r'-\s*优先级[：:]\s*(P[012])', full_text)
         if priority_match:
             case["优先级"] = priority_match.group(1)
         elif case_type == "安全":
             case["优先级"] = "P0"
+
         req_match = re.search(r'-\s*关联需求[：:]\s*([^\n]+)', full_text)
         case["关联需求"] = req_match.group(1).strip() if req_match else "无"
+
         precond_match = re.search(r'-\s*前置条件[：:]\s*([^\n]+)', full_text)
         case["前置条件"] = precond_match.group(1).strip() if precond_match else "无"
+
         data_match = re.search(r'-\s*测试数据[：:]\s*([^\n]+)', full_text)
         if data_match:
             case["测试数据"] = data_match.group(1).strip()
+
+        # 提取测试步骤（支持多行）
         steps_match = re.search(r'-\s*测试步骤[：:]\s*\n((?:\s*\d+\..*?\n?)*)', full_text, re.DOTALL)
         if steps_match:
             case["测试步骤"] = steps_match.group(1).strip()
-        expected_match = re.search(r'-\s*预期结果[：:]\s*\n((?:\s*\d+\..*?\n?)*)', full_text, re.DOTALL)
-        if expected_match:
-            case["预期结果"] = expected_match.group(1).strip()
+
+        # 如果没找到多行格式，尝试单行
         if not case["测试步骤"]:
             steps_single = re.search(r'-\s*测试步骤[：:]\s*([^\n]+)', full_text)
             if steps_single:
@@ -162,6 +184,13 @@ def parse_ai_markdown_cases(markdown_content, case_type):
                 if '1.' in steps_text:
                     steps_text = re.sub(r'(\d+\.)', r'\n\1', steps_text).strip()
                 case["测试步骤"] = steps_text
+
+        # 提取预期结果（支持多行）
+        expected_match = re.search(r'-\s*预期结果[：:]\s*\n((?:\s*\d+\..*?\n?)*)', full_text, re.DOTALL)
+        if expected_match:
+            case["预期结果"] = expected_match.group(1).strip()
+
+        # 如果没找到多行格式，尝试单行
         if not case["预期结果"]:
             expected_single = re.search(r'-\s*预期结果[：:]\s*([^\n]+)', full_text)
             if expected_single:
@@ -169,14 +198,18 @@ def parse_ai_markdown_cases(markdown_content, case_type):
                 if '1.' in expected_text:
                     expected_text = re.sub(r'(\d+\.)', r'\n\1', expected_text).strip()
                 case["预期结果"] = expected_text
+
         if case["测试标题"]:
             cases.append(case)
+
     return cases
 
 
 def merge_ai_rules(db_rule, user_rules):
+    """合并数据库规则和用户规则"""
     if not db_rule:
         return user_rules if user_rules else ""
+
     rule_text = ""
     if db_rule.get('input_fields'):
         rule_text += f"\n【强制规则】输入字段只能是：{db_rule.get('input_fields')}\n"
@@ -186,11 +219,12 @@ def merge_ai_rules(db_rule, user_rules):
         rule_text += f"【强制规则】约束：{db_rule.get('constraints')}\n"
     if user_rules:
         rule_text += f"\n【补充规则】\n{user_rules}\n"
+
     return rule_text
 
 
-def generate_ai_test_cases(project, module, description, limits, need_analysis=True, business_rules="",
-                           progress_callback=None):
+def generate_ai_test_cases(project, module, description, limits, need_analysis=True,
+                           business_rules="", progress_callback=None):
     """
     生成AI测试用例（并行版本）
     progress_callback: 可选，接收 (进度百分比, 状态消息) 的回调函数
@@ -211,6 +245,8 @@ def generate_ai_test_cases(project, module, description, limits, need_analysis=T
     active_dimensions = [(dim, limits.get(dim, 0)) for dim in dimensions if limits.get(dim, 0) > 0]
 
     if not active_dimensions:
+        if progress_callback:
+            progress_callback(1.0, "没有需要生成的用例维度")
         return result
 
     if progress_callback:
@@ -221,7 +257,6 @@ def generate_ai_test_cases(project, module, description, limits, need_analysis=T
     completed = 0
     lock = threading.Lock()
 
-    # ⚠️ 下面是需要补全的部分
     def generate_dimension_wrapper(dim, max_num):
         """包装函数，用于并行执行"""
         try:
@@ -265,7 +300,6 @@ def generate_ai_test_cases(project, module, description, limits, need_analysis=T
             case["测试ID"] = f"AI_TC_{i:03d}"
 
     # 去重处理
-    from common import deduplicate_test_cases
     original_count = len(result["cases"])
     result["cases"] = deduplicate_test_cases(result["cases"])
 
@@ -274,134 +308,34 @@ def generate_ai_test_cases(project, module, description, limits, need_analysis=T
 
     return result
 
-    def generate_dimension_wrapper(dim, max_num):
-        """包装函数，用于并行执行"""
-        try:
-            content = generate_dimension_cases(project, module, description, dim, max_num, merged_rules)
-            cases = parse_ai_markdown_cases(content, dim)
-            if len(cases) > max_num:
-                cases = cases[:max_num]
-            return dim, cases, None
-        except Exception as e:
-            return dim, [], str(e)
-
-    with ThreadPoolExecutor(max_workers=min(len(active_dimensions), 3)) as executor:
-        # 提交所有任务
-        future_to_dim = {
-            executor.submit(generate_dimension_wrapper, dim, max_num): dim
-            for dim, max_num in active_dimensions
-        }
-
-        # 收集结果
-        for future in as_completed(future_to_dim):
-            dim, cases, error = future.result()
-            completed += 1
-
-            if error:
-                print(f"❌ {dim}维度生成失败: {error}")
-                if progress_callback:
-                    progress_callback(0.2 + (completed / len(active_dimensions)) * 0.8,
-                                      f"{dim}维度生成失败，跳过")
-            else:
-                all_cases.extend(cases)
-                if progress_callback:
-                    progress_callback(0.2 + (completed / len(active_dimensions)) * 0.8,
-                                      f"✅ {dim}维度完成 ({len(cases)}条)")
-
-    result["cases"] = all_cases
-
-    # 补充缺失的测试ID
-    for i, case in enumerate(result["cases"], 1):
-        if not case.get("测试ID"):
-            case["测试ID"] = f"AI_TC_{i:03d}"
-
-    # 去重处理
-    from common import deduplicate_test_cases
-    original_count = len(result["cases"])
-    result["cases"] = deduplicate_test_cases(result["cases"])
-
-    if progress_callback:
-        progress_callback(1.0, f"✅ 全部完成！生成 {len(result['cases'])} 条用例 (去重前 {original_count} 条)")
-
-    return result
 
 def export_ai_test_result(result, project, module, need_analysis=True):
+    """导出AI测试结果为Excel"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{clean_name(project)}_{clean_name(module)}_AITest_{timestamp}.xlsx"
     filepath = os.path.join(data_folder_path, filename)
+
     with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
         if need_analysis and result.get("analysis"):
             analysis_lines = result["analysis"].strip().split('\n')
             analysis_df = pd.DataFrame({"内容": analysis_lines})
             analysis_df.to_excel(writer, sheet_name="四维分析", index=False)
+
         cases_df = pd.DataFrame(result["cases"])
-        cols = ["测试ID", "测试标题", "测试类型", "优先级", "关联需求", "前置条件", "测试数据", "测试步骤", "预期结果",
-                "实际结果", "执行人"]
+        cols = ["测试ID", "测试标题", "测试类型", "优先级", "关联需求", "前置条件",
+                "测试数据", "测试步骤", "预期结果", "实际结果", "执行人"]
         cols = [c for c in cols if c in cases_df.columns]
         cases_df[cols].to_excel(writer, sheet_name="测试用例", index=False)
+
+    # 美化Excel
+    try:
+        from fix_excel import fix_excel_format
+        fix_excel_format(filepath)
+    except:
+        pass
+
     return filepath
 
-
-# testcase_ai_agent.py - 完整修正版
-
-def generate_ai_test_cases(project, module, description, limits, need_analysis=True,
-                           business_rules="", progress_callback=None):
-    """
-    生成AI测试用例
-    progress_callback: 可选，接收 (进度百分比, 状态消息) 的回调函数
-    """
-    db_rule = get_rule(project, module)
-    merged_rules = merge_ai_rules(db_rule, business_rules)
-
-    # ✅ 初始化 result 字典
-    result = {"analysis": "", "cases": []}
-
-    # 生成分析报告
-    if need_analysis:
-        if progress_callback:
-            progress_callback(0.1, "正在生成四大维度分析报告...")
-        result["analysis"] = generate_analysis(project, module, description)
-
-    # 统计需要生成的维度总数
-    dimensions = ["功能", "准确性", "鲁棒性", "用户体验", "安全"]
-    active_dimensions = [(d, limits.get(d, 0)) for d in dimensions if limits.get(d, 0) > 0]
-    total_dims = len(active_dimensions)
-
-    if total_dims == 0:
-        return result
-
-    # 逐维度生成用例
-    for idx, (dim, max_num) in enumerate(active_dimensions):
-        # 更新进度
-        if progress_callback:
-            progress = 0.2 + (idx / total_dims) * 0.8  # 分析占20%，用例生成占80%
-            progress_callback(progress, f"正在生成{dim}测试用例 (最多{max_num}条)...")
-
-        # 生成该维度的用例
-        content = generate_dimension_cases(project, module, description, dim, max_num, merged_rules)
-        cases = parse_ai_markdown_cases(content, dim)
-
-        # 限制数量
-        if len(cases) > max_num:
-            cases = cases[:max_num]
-
-        result["cases"].extend(cases)
-
-        # 可选：每生成一个维度就回调一次
-        if progress_callback:
-            progress_callback(0.2 + ((idx + 1) / total_dims) * 0.8,
-                            f"{dim}用例生成完成 ({len(cases)}条)")
-
-    # 补充缺失的测试ID
-    for i, case in enumerate(result["cases"], 1):
-        if not case.get("测试ID"):
-            case["测试ID"] = f"AI_TC_{i:03d}"
-
-    # 最终回调
-    if progress_callback:
-        progress_callback(1.0, f"全部完成！共生成 {len(result['cases'])} 条用例")
-
-    return result
 
 if __name__ == "__main__":
     print("AI测试用例生成器已加载")

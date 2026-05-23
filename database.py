@@ -1,6 +1,7 @@
 # database.py
 import sqlite3
 import os
+import json
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "project_rules.db")
 
@@ -14,7 +15,6 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # 改为 CREATE TABLE IF NOT EXISTS
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS project_rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +34,7 @@ def init_db():
     conn.commit()
     conn.close()
     print("✅ 数据库初始化完成")
+
 
 def get_rule(project_name, module_name):
     """获取指定项目和模块的规则"""
@@ -62,6 +63,15 @@ def save_rule(project_name, module_name, input_fields="", verification_code="", 
     """保存或更新规则"""
     conn = get_connection()
     cursor = conn.cursor()
+
+    # 处理 input_fields：如果是列表字符串，尝试解析
+    if input_fields and input_fields.startswith('['):
+        try:
+            # 验证是否为有效JSON
+            json.loads(input_fields)
+        except:
+            pass
+
     cursor.execute('''
         INSERT INTO project_rules (project_name, module_name, input_fields, verification_code, extra_features, constraints, priority)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -87,7 +97,6 @@ def list_all_rules():
             "SELECT project_name, module_name, input_fields, constraints, priority FROM project_rules ORDER BY priority DESC")
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
-        # 如果表不存在或列不存在，返回空列表
         rows = []
     conn.close()
     return rows

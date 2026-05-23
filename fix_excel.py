@@ -12,7 +12,7 @@ DATA_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
 def fix_excel_format(filepath):
-    """美化单个 Excel 文件"""
+    """美化单个 Excel 文件（支持动态列）"""
     if not os.path.exists(filepath):
         print(f"❌ 文件不存在: {filepath}")
         return False
@@ -27,8 +27,9 @@ def fix_excel_format(filepath):
         val = ws.cell(row=header_row, column=col).value
         col_names.append(val)
 
-    # 设置列宽
-    col_widths = {
+    # 默认列宽映射
+    default_widths = {
+        # 手工用例字段
         "用例ID": 10,
         "标题": 22,
         "前置条件": 20,
@@ -36,29 +37,31 @@ def fix_excel_format(filepath):
         "预期结果": 15,
         "实际结果": 12,
         "优先级": 8,
-        # 动态参数字段
-        "用户名": 15,
-        "密码": 12,
-        "验证码": 10,
-        "商品ID": 12,
-        "数量": 10,
-        "是否勾选": 10,
-        "关键词": 15,
-        "筛选条件": 15,
-        "排序方式": 12,
-        "收货地址": 20,
-        "支付方式": 12,
-        "优惠券": 12,
-        "参数1": 12,
-        "参数2": 12,
-        "参数3": 12,
+        # 接口用例字段
+        "方法": 8,
+        "URL": 40,
+        "请求头": 25,
+        "参数": 20,
+        "请求体": 30,
+        "断言": 30,
+        "提取变量": 20,
+        "前置步骤": 25,
+        "后置清理": 20,
     }
 
+    # 动态参数字段（常见）
+    dynamic_fields = ["用户名", "密码", "验证码", "商品ID", "数量", "是否勾选",
+                      "关键词", "筛选条件", "排序方式", "收货地址", "支付方式", "优惠券"]
+
+    # 设置列宽
     for col in range(1, ws.max_column + 1):
         col_letter = get_column_letter(col)
         col_name = col_names[col - 1] if col - 1 < len(col_names) else ""
-        if col_name in col_widths:
-            ws.column_dimensions[col_letter].width = col_widths[col_name]
+
+        if col_name in default_widths:
+            ws.column_dimensions[col_letter].width = default_widths[col_name]
+        elif col_name in dynamic_fields:
+            ws.column_dimensions[col_letter].width = 12
         else:
             ws.column_dimensions[col_letter].width = 15
 
@@ -88,7 +91,7 @@ def fix_excel_format(filepath):
     )
 
     # 数据对齐：短字段居中，长字段左对齐
-    center_cols = ["用例ID", "验证码", "实际结果", "优先级"]
+    center_cols = ["用例ID", "验证码", "实际结果", "优先级", "方法", "状态码"]
 
     for row in range(header_row + 1, ws.max_row + 1):
         for col in range(1, ws.max_column + 1):

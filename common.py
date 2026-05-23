@@ -14,17 +14,28 @@ current_script_dir = os.path.dirname(os.path.abspath(__file__))
 data_folder_path = os.path.join(current_script_dir, "data")
 os.makedirs(data_folder_path, exist_ok=True)
 
+# ======================
+# LLM 配置（从环境变量读取，支持切换模型）
+# ======================
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-pro")
+LLM_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "8000"))
+
 llm = ChatOpenAI(
-    model="deepseek-v4-pro",
-    api_key=os.getenv("DASHSCOPE_API_KEY"),
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    temperature=0.1,
-    max_tokens=8000
+    model=LLM_MODEL,
+    api_key=LLM_API_KEY,
+    base_url=LLM_BASE_URL,
+    temperature=LLM_TEMPERATURE,
+    max_tokens=LLM_MAX_TOKENS
 )
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def call_llm_with_retry(prompt):
     return llm.invoke([HumanMessage(content=prompt)])
+
 
 def parse_markdown_to_cases(markdown_content):
     cases = []
@@ -67,6 +78,7 @@ def parse_markdown_to_cases(markdown_content):
             cases.append(case)
     return cases
 
+
 def deduplicate_cases(cases):
     seen = set()
     unique = []
@@ -76,6 +88,7 @@ def deduplicate_cases(cases):
             seen.add(key)
             unique.append(case)
     return unique
+
 
 def denoise_cases(cases):
     valid = []
@@ -90,6 +103,7 @@ def denoise_cases(cases):
         valid.append(case)
     return valid
 
+
 def get_next_file_number():
     max_num = 0
     for f in os.listdir(data_folder_path):
@@ -100,8 +114,10 @@ def get_next_file_number():
                 max_num = num
     return max_num + 1
 
+
 def clean_name(name):
     return re.sub(r'[\\/*?:"<>|]', "", name)[:50]
+
 
 def export_to_excel(cases, filename_prefix):
     if not cases:
@@ -118,13 +134,8 @@ def export_to_excel(cases, filename_prefix):
     return full_path
 
 
-# common.py - 在文件末尾（第 118 行之后）添加
-
 def deduplicate_test_cases(cases, key_fields=None):
-    """
-    测试用例去重
-    key_fields: 用于判断重复的字段列表，默认使用 ['测试标题', '测试步骤']
-    """
+    """测试用例去重"""
     if not cases:
         return cases
 
@@ -135,11 +146,9 @@ def deduplicate_test_cases(cases, key_fields=None):
     unique_cases = []
 
     for case in cases:
-        # 构建唯一键
         key_parts = []
         for field in key_fields:
             value = case.get(field, '')
-            # 只取前100个字符避免键过长
             key_parts.append(str(value)[:100])
 
         unique_key = '||'.join(key_parts)
