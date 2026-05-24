@@ -6,9 +6,10 @@
 规则1：代码生成优先（Token异常、参数缺失、参数为空）
 规则2：AI 生成补充（正向用例、格式错误、业务异常）
 规则3：用例编号连续（AI 从代码生成最大编号+1开始）
-规则4：断言必须包含 body.msg
+规则4：断言规范（POST类需 body.code + body.msg，GET类只需 status_code）
 规则5：超长字符串用占位符，不实际生成
 规则6：业务规则优先级（数据库规则 > 用户输入 > 默认）
+规则7：口语化版输出 Apifox 兼容格式（用例标题/token/参数/msg/code）
 """
 import re
 import os
@@ -189,6 +190,54 @@ def fix_case_id(cases: List[Dict], start_id: int) -> List[Dict]:
     return fixed_cases
 
 
+def get_method_from_url(url_path: str, module_name: str = "") -> str:
+    """根据 URL 特征判断请求方法"""
+    query_keywords = ["list", "search", "query", "get", "find", "page", "index", "show", "detail"]
+    for keyword in query_keywords:
+        if keyword in url_path.lower():
+            return "GET"
+
+    query_modules = ["查询", "列表", "搜索", "详情"]
+    for keyword in query_modules:
+        if keyword in module_name:
+            return "GET"
+
+    return "POST"
+
+
+def normalize_assert(assert_dict: dict, method: str) -> dict:
+    """根据请求方法规范化断言"""
+    if not assert_dict:
+        if method == "GET":
+            return {"status_code": 200}
+        else:
+            return {"status_code": 200, "body.code": 200, "body.msg": "操作成功"}
+
+    result = assert_dict.copy()
+
+    if "status_code" not in result:
+        result["status_code"] = 200
+
+    if method in ["POST", "PUT", "DELETE"]:
+        if "body.code" not in result:
+            status_code = result.get("status_code", 200)
+            if status_code == 200:
+                result["body.code"] = 200
+            elif status_code == 401:
+                result["body.code"] = 401
+            else:
+                result["body.code"] = 500
+        if "body.msg" not in result:
+            if result.get("status_code") == 200:
+                result["body.msg"] = "操作成功"
+            elif result.get("status_code") == 401:
+                result["body.msg"] = "认证失败，无法访问系统资源"
+            else:
+                result["body.msg"] = "操作失败"
+
+    return result
+
+
 # ======================
 # 从数据库读取模块配置
 # ======================
@@ -211,7 +260,8 @@ def get_module_config(project_name: str, module_name: str) -> Optional[Dict]:
 # ======================
 # 代码生成：Token 异常用例（规则1：代码生成优先）
 # ======================
-def generate_token_error_cases(module_name: str, url_path: str, default_body: dict, start_id: int) -> List[Dict]:
+def generate_token_error_cases(module_name: str, url_path: str, default_body: dict, start_id: int,
+                               method: str = "POST") -> List[Dict]:
     """生成 Token 异常用例（代码生成）"""
     cases = []
     case_id = start_id
@@ -230,14 +280,16 @@ def generate_token_error_cases(module_name: str, url_path: str, default_body: di
         else:
             headers["Authorization"] = token_value
 
+        assert_dict = normalize_assert({"status_code": status_code, "body.msg": msg}, method)
+
         cases.append({
             "case_id": f"TC_{case_id:03d}",
             "title": title,
-            "method": "POST",
+            "method": method,
             "url": url_path,
             "headers": headers,
             "body": default_body.copy(),
-            "assert": {"status_code": status_code, "body.msg": msg},
+            "assert": assert_dict,
             "extract": {},
             "priority": "P2"
         })
@@ -247,8 +299,8 @@ def generate_token_error_cases(module_name: str, url_path: str, default_body: di
     return cases
 
 
-def generate_missing_param_cases(url_path: str, default_body: dict, required_fields: List[str], start_id: int) -> List[
-    Dict]:
+def generate_missing_param_cases(url_path: str, default_body: dict, required_fields: List[str], start_id: int,
+                                 method: str = "POST") -> List[Dict]:
     """生成参数缺失用例（代码生成）"""
     cases = []
     case_id = start_id
@@ -257,14 +309,16 @@ def generate_missing_param_cases(url_path: str, default_body: dict, required_fie
         body = default_body.copy()
         body.pop(field, None)
 
+        assert_dict = normalize_assert({"status_code": 400, "body.msg": f"{field}不能为空"}, method)
+
         cases.append({
             "case_id": f"TC_{case_id:03d}",
             "title": f"缺失参数 {field}",
-            "method": "POST",
+            "method": method,
             "url": url_path,
             "headers": DEFAULT_HEADERS.copy(),
             "body": body,
-            "assert": {"status_code": 400, "body.msg": f"{field}不能为空"},
+            "assert": assert_dict,
             "extract": {},
             "priority": "P2"
         })
@@ -274,8 +328,8 @@ def generate_missing_param_cases(url_path: str, default_body: dict, required_fie
     return cases
 
 
-def generate_empty_param_cases(url_path: str, default_body: dict, required_fields: List[str], start_id: int) -> List[
-    Dict]:
+def generate_empty_param_cases(url_path: str, default_body: dict, required_fields: List[str], start_id: int,
+                               method: str = "POST") -> List[Dict]:
     """生成参数为空用例（代码生成）"""
     cases = []
     case_id = start_id
@@ -290,14 +344,16 @@ def generate_empty_param_cases(url_path: str, default_body: dict, required_field
         else:
             body[field] = ""
 
+        assert_dict = normalize_assert({"status_code": 400, "body.msg": f"{field}不能为空"}, method)
+
         cases.append({
             "case_id": f"TC_{case_id:03d}",
             "title": f"参数 {field} 为空",
-            "method": "POST",
+            "method": method,
             "url": url_path,
             "headers": DEFAULT_HEADERS.copy(),
             "body": body,
-            "assert": {"status_code": 400, "body.msg": f"{field}不能为空"},
+            "assert": assert_dict,
             "extract": {},
             "priority": "P2"
         })
@@ -315,67 +371,52 @@ def generate_ai_cases(project_name: str, module_name: str, url_path: str,
                       business_rules: str, start_id: int, max_num: int) -> List[Dict]:
     """AI 生成正向用例、格式错误、业务异常用例"""
 
-    # 判断请求方法（根据 URL 特征或默认 POST）
-    method = "GET" if "list" in url_path or "search" in url_path or "query" in url_path else "POST"
+    method = get_method_from_url(url_path, module_name)
+    logger.info(f"开始调用 AI 生成用例，起始编号: TC_{start_id:03d}，请求方法: {method}")
+
+    if method == "GET":
+        assert_example = {"status_code": 200}
+        assert_requirement = "GET请求只验证 status_code"
+    else:
+        assert_example = {"status_code": 200, "body.code": 200, "body.msg": "操作成功"}
+        assert_requirement = "POST/PUT/DELETE 请求必须包含 status_code、body.code、body.msg"
 
     prompt = f"""你是接口自动化测试用例生成专家。
 
 【规则优先级 - 必须严格遵守】
 0号铁律：只输出 JSON 数组，不输出解释性文字、不开场白
 规则1：正向用例只选1个参数遍历，不要为每个参数都生成
-规则2：assert 必须包含 status_code 和 body.code（业务状态码）
-规则3：正向用例必须包含 extract 字段提取 token 或关键数据
-规则4：GET 请求用 query string，POST 请求用 body
-规则5：用例编号从 TC_{start_id:03d} 开始连续
-规则6：超长字符串用占位符，不要实际生成
+规则2：{assert_requirement}
+规则3：正向用例必须包含 extract 字段提取 token 或 id
+规则4：用例编号从 TC_{start_id:03d} 开始连续
+规则5：超长字符串用占位符，不要实际生成
 
 【项目】{project_name}
 【模块】{module_name}
 【接口地址】{url_path}
 【请求方法】{method}
 
-【业务规则】（优先级：数据库规则 > 用户输入）
+【业务规则】
 {business_rules}
 
-【默认请求体/参数】
+【默认请求体】
 {json.dumps(default_body, ensure_ascii=False, indent=2)}
 
 【必填参数】
 {json.dumps(required_fields, ensure_ascii=False)}
 
-【重要：已经生成的用例】（规则1：代码生成优先）
-以下类型的用例已经由代码生成，你不需要再生成：
-- Token 异常用例（过期/错误/空/缺失Token）
-- 参数缺失用例（每个必填参数缺失一条）
-- 参数为空用例（每个必填参数传空值一条）
+【已经生成的用例】
+以下用例已由代码生成，你不需要再生成：
+- Token 异常用例
+- 参数缺失用例
+- 参数为空用例
 
 【你需要生成的用例类型】
-
-1. 正向用例（只选1个参数遍历）：
-   - 分析哪个参数的正向测试点最多（通常是价格、金额、ID、编号等）
-   - **只选择1个参数**作为遍历参数
-   - 找出该参数的有效边界值（如 0, 1, 999, 99999，或枚举值列表）
-   - 固定其他参数的正确值，只变化这个参数，生成遍历用例
-   - 优先级：P0
-   - **必须包含 extract 字段**：{{"token": "body.data.token"}} 或 {{"id": "body.data.id"}}
-   - 数量：该参数的有效值数量（通常3-5条）
-
-2. 格式错误用例：
-   - 手机号格式错误（非11位）
-   - 字符串超长（用「超长字符串」占位符）
-   - 数字超出范围
-   - 枚举值无效
-   - 每个格式错误类型生成1条
-   - 优先级：P2
-
-3. 业务规则异常用例：
-   - 根据业务规则中的约束生成（如：合同编号重复、课程不存在等）
-   - 每个业务约束生成1条
-   - 优先级：P2
+1. 正向用例（只选1个参数遍历，3-5条，P0，必须有extract）
+2. 格式错误用例（每个类型1条，P2）
+3. 业务规则异常用例（每个约束1条，P2）
 
 【用例格式】
-
-{method} 请求示例（带 extract）：
 {{
     "case_id": "TC_XXX",
     "title": "用例标题",
@@ -383,24 +424,10 @@ def generate_ai_cases(project_name: str, module_name: str, url_path: str,
     "url": "{url_path}",
     "headers": {{"Content-Type": "application/json", "Authorization": "Bearer {{token}}"}},
     "body": {{}},
-    "assert": {{"status_code": 200, "body.code": 200, "body.msg": "操作成功"}},
+    "assert": {json.dumps(assert_example, ensure_ascii=False)},
     "extract": {{"token": "body.data.token"}},
     "priority": "P0"
 }}
-
-【断言规范】
-- status_code: HTTP 状态码（200/400/401/500）
-- body.code: 业务状态码（200=成功，其他=失败）
-- body.msg: 业务消息
-
-【extract 规范】
-- 正向用例必须包含 extract
-- 登录接口提取 token
-- 新增接口提取 id
-- 其他接口根据需要提取
-
-【数量要求】
-最多生成 {max_num} 条
 
 请直接输出 JSON 数组："""
 
@@ -425,7 +452,6 @@ def generate_ai_cases(project_name: str, module_name: str, url_path: str,
                 case["url"] = url_path
             case["body"] = ensure_dict_field(case.get("body"), "body")
             if "extract" not in case:
-                # 正向用例添加默认 extract
                 if case.get("priority") == "P0" or "正向" in case.get("title", ""):
                     if "login" in url_path or "登录" in project_name:
                         case["extract"] = {"token": "body.data.token"}
@@ -437,11 +463,10 @@ def generate_ai_cases(project_name: str, module_name: str, url_path: str,
                     case["extract"] = {}
             if "priority" not in case:
                 case["priority"] = "P2"
-            if case.get("assert"):
-                if isinstance(case["assert"], dict):
-                    # 确保包含 body.code
-                    if "body.code" not in case["assert"]:
-                        case["assert"]["body.code"] = 200 if case["assert"].get("status_code") == 200 else 500
+            if "assert" in case:
+                case["assert"] = normalize_assert(case["assert"], method)
+            else:
+                case["assert"] = normalize_assert({}, method)
 
         cases = fix_case_id(cases, start_id)
         cases = filter_oversize_cases(cases)
@@ -454,18 +479,13 @@ def generate_ai_cases(project_name: str, module_name: str, url_path: str,
         logger.error(f"AI 生成失败: {e}")
         return []
 
+
 # ======================
-# 主函数：混合策略生成
+# 主函数：混合策略生成（专业化版）
 # ======================
 def generate_api_test_cases(project_name: str, module_name: str, test_type: str = "",
                             num: int = 10, business_rules: str = "") -> List[Dict]:
-    """
-    混合策略生成接口测试用例
-    - 规则1：代码生成 Token异常、参数缺失、参数为空
-    - 规则2：AI 生成正向用例、格式错误、业务异常
-    - 规则3：用例编号连续
-    - 规则6：业务规则优先级（数据库 > 用户输入）
-    """
+    """混合策略生成接口测试用例（专业化版）"""
     is_valid, msg = validate_user_input(business_rules)
     if not is_valid:
         logger.error(f"输入校验失败: {msg}")
@@ -481,7 +501,8 @@ def generate_api_test_cases(project_name: str, module_name: str, test_type: str 
     required_fields = config["required_fields"]
     db_constraints = config["constraints"]
 
-    # 规则6：业务规则优先级（数据库规则 > 用户输入）
+    method = get_method_from_url(url_path, module_name)
+
     rules_list = []
     if db_constraints:
         rules_list.append(f"【数据库规则】{db_constraints}")
@@ -491,7 +512,7 @@ def generate_api_test_cases(project_name: str, module_name: str, test_type: str 
 
     logger.info(f"开始生成 {module_name} 模块接口测试用例，目标数量: {num}")
     logger.info(f"项目: {project_name}, 模块: {module_name}")
-    logger.info(f"URL: {url_path}")
+    logger.info(f"URL: {url_path}, 方法: {method}")
     logger.info(f"必填参数: {required_fields}")
 
     all_cases = []
@@ -499,26 +520,24 @@ def generate_api_test_cases(project_name: str, module_name: str, test_type: str 
     code_count = 0
     ai_count = 0
 
-    # 规则1：代码生成优先
     logger.info("步骤1: 代码生成 Token 异常用例...")
-    token_cases = generate_token_error_cases(module_name, url_path, default_body, case_id)
+    token_cases = generate_token_error_cases(module_name, url_path, default_body, case_id, method)
     all_cases.extend(token_cases)
     code_count += len(token_cases)
     case_id = get_max_case_id(all_cases) + 1
 
     logger.info("步骤2: 代码生成参数缺失用例...")
-    missing_cases = generate_missing_param_cases(url_path, default_body, required_fields, case_id)
+    missing_cases = generate_missing_param_cases(url_path, default_body, required_fields, case_id, method)
     all_cases.extend(missing_cases)
     code_count += len(missing_cases)
     case_id = get_max_case_id(all_cases) + 1
 
     logger.info("步骤3: 代码生成参数为空用例...")
-    empty_cases = generate_empty_param_cases(url_path, default_body, required_fields, case_id)
+    empty_cases = generate_empty_param_cases(url_path, default_body, required_fields, case_id, method)
     all_cases.extend(empty_cases)
     code_count += len(empty_cases)
     case_id = get_max_case_id(all_cases) + 1
 
-    # 规则2：AI 生成补充
     logger.info("步骤4: AI 生成正向用例、格式错误、业务异常...")
     ai_max_num = max(1, num - len(all_cases))
     ai_cases = generate_ai_cases(project_name, module_name, url_path, default_body,
@@ -526,11 +545,9 @@ def generate_api_test_cases(project_name: str, module_name: str, test_type: str 
     ai_count = len(ai_cases)
     all_cases.extend(ai_cases)
 
-    # 去重
     logger.info("步骤5: 去重处理...")
     all_cases = deduplicate_api_cases(all_cases)
 
-    # 规则3：数量限制
     if len(all_cases) > num:
         all_cases = all_cases[:num]
 
@@ -542,7 +559,7 @@ def generate_api_test_cases(project_name: str, module_name: str, test_type: str 
 
 
 # ======================
-# 导出函数
+# 专业化版导出
 # ======================
 def export_api_excel(cases: List[Dict], project_name: str, module_name: str, test_type: str = "") -> str:
     """导出专业化版Excel - 10列格式"""
@@ -714,6 +731,179 @@ def generate_api_test_full(project_name: str, module_name: str, test_type: str =
 
 
 # ======================
+# 口语化版：Apifox 格式（规则7）
+# ======================
+def generate_api_test_full_human(project_name: str, module_name: str, test_type: str = "",
+                                 num: int = 10, business_rules: str = "") -> Dict:
+    """
+    口语化版 - 生成 Apifox 兼容的数据驱动表格格式
+    """
+    is_valid, msg = validate_user_input(business_rules)
+    if not is_valid:
+        print(f"❌ 输入校验失败: {msg}")
+        return {"cases": [], "excel_path": None, "pytest_path": None}
+
+    db_rule = get_rule(project_name, module_name)
+    config = get_module_config(project_name, module_name)
+
+    rules_list = []
+    if db_rule and db_rule.get('constraints'):
+        rules_list.append(db_rule.get('constraints'))
+    if business_rules:
+        rules_list.append(business_rules)
+    merged_rules = "\n".join(rules_list) if rules_list else business_rules
+
+    url_path = config["url_path"] if config else f"/api/{module_name.lower().replace(' ', '_')}"
+    method = get_method_from_url(url_path, module_name)
+
+    default_body = config["default_body"] if config else {}
+
+    # 获取参数列表
+    param_names = list(default_body.keys()) if default_body else ["param1", "param2", "param3"]
+    param_fields = "\n".join([f"- {p}: 参数值" for p in param_names])
+
+    prompt = f"""你是接口测试用例生成专家。
+
+【规则优先级 - 必须严格遵守】
+0号铁律：只输出 JSON 数组，不输出解释性文字
+规则7：输出 Apifox 兼容的数据驱动表格格式
+
+【项目】{project_name}
+【模块】{module_name}
+【接口地址】{url_path}
+【请求方法】{method}
+
+【业务规则】
+{merged_rules}
+
+【参数说明】
+- 用例标题: 简短描述（如：token过期、课程空字符、价格边界值）
+- token: 登录依赖（正确token/Bearer过期token/Bearer错误token/空/缺失）
+{param_fields}
+- msg: 响应消息（断言校验）
+- code: 业务状态码（断言校验，200=成功，401=认证失败）
+
+【默认值】
+{json.dumps(default_body, ensure_ascii=False, indent=2)}
+
+【需要生成的测试数据】
+1. Token 异常用例（4条）：
+   - 用例标题: token过期，token=Bearer过期token，其他参数正确 → code=401, msg="认证失败，无法访问系统资源"
+   - 用例标题: token错误，token=Bearer错误token，其他参数正确 → code=401, msg="认证失败，无法访问系统资源"
+   - 用例标题: token为空，token=Bearer，其他参数正确 → code=401, msg="认证失败，无法访问系统资源"
+   - 用例标题: token缺失，token不传，其他参数正确 → code=401, msg="认证失败，无法访问系统资源"
+
+2. 正向用例（必须按参数边界值生成，起码1条）：
+   - 分析哪个参数的正向测试点最多（通常是价格、金额、数量、ID等）
+   - 找出该参数的有效边界值（如价格：0, 1, 999, 99999；课程ID：100, 101, 102）
+   - 固定其他参数的正确值，只变化这个参数
+   - **每个边界值生成一条独立的用例**
+   - 数量 = 该参数的有效边界值数量（通常 3-5 条，必须多于 1 条）
+   - 示例：
+     - 用例标题: 价格边界值0，price=0 → code=200, msg="操作成功"
+     - 用例标题: 价格边界值1，price=1 → code=200, msg="操作成功"
+     - 用例标题: 价格边界值999，price=999 → code=200, msg="操作成功"
+     - 用例标题: 价格边界值99999，price=99999 → code=200, msg="操作成功"
+    
+3. 参数异常用例：
+   - 用例标题: 课程空字符，name为空 → code=400, msg="课程名称不能为空"
+   - 用例标题: 课程超长，name=51字符 → code=400, msg="课程名称超出长度"
+   - 用例标题: 价格为负数，price=-1 → code=400, msg="价格不能为负数"
+
+【输出格式】JSON数组，每行是一个测试数据：
+
+[
+  {{
+    "case_id": "TC_001",
+    "用例标题": "token过期",
+    "token": "Bearer过期token",
+    {', '.join([f'"{p}": "示例值"' for p in param_names])},
+    "msg": "认证失败，无法访问系统资源",
+    "code": 401
+  }}
+]
+
+【字段说明】
+- case_id: 字符串
+- 用例标题: 字符串
+- token: 字符串
+- {', '.join(param_names)}: 根据参数类型（字符串/数字）
+- msg: 字符串
+- code: 数字
+
+请生成 {num} 条测试数据，直接输出 JSON 数组："""
+
+    try:
+        response = call_llm_with_retry(prompt)
+        content = response.content.strip()
+
+        cases = safe_json_parse(content)
+
+        for i, case in enumerate(cases, 1):
+            if not case.get("case_id"):
+                case["case_id"] = f"TC_{i:03d}"
+
+        excel_path = export_apifox_excel(cases, project_name, module_name, test_type, param_names)
+        return {"cases": cases, "excel_path": excel_path, "pytest_path": None}
+
+    except Exception as e:
+        print(f"❌ 口语化版生成失败: {e}")
+        return {"cases": [], "excel_path": None, "pytest_path": None}
+
+
+def export_apifox_excel(cases: List[Dict], project_name: str, module_name: str,
+                        test_type: str = "", param_names: List[str] = None) -> str:
+    """导出 Apifox 兼容的 Excel 格式（含用例标题）"""
+    if not cases:
+        return None
+
+    next_num = get_next_file_number()
+    prefix = f"{clean_name(project_name)}_{clean_name(module_name)}_APIFOX"
+    if test_type and test_type.strip():
+        prefix = f"{clean_name(project_name)}_{clean_name(module_name)}_{clean_name(test_type)}_APIFOX"
+
+    filename = f"{prefix}_{next_num:03d}.xlsx"
+    full_path = os.path.join(data_folder_path, filename)
+
+    if param_names is None:
+        param_names = ["param1", "param2", "param3"]
+
+    # Apifox 需要的列顺序：case_id, 用例标题, token, 参数..., msg, code
+    cols = ["case_id", "用例标题", "token"] + param_names + ["msg", "code"]
+
+    rows = []
+    for case in cases:
+        row = {}
+        for col in cols:
+            value = case.get(col, "")
+            # 处理数字类型
+            if col == "code" and isinstance(value, str):
+                try:
+                    value = int(value)
+                except:
+                    value = 500
+            row[col] = value
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    # 只保留存在的列
+    existing_cols = [c for c in cols if c in df.columns]
+    df = df[existing_cols]
+
+    with pd.ExcelWriter(full_path, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="测试数据", index=False)
+
+    try:
+        from fix_excel import fix_excel_format
+        fix_excel_format(full_path)
+    except:
+        pass
+
+    print(f"✅ Apifox 格式导出成功：{full_path}")
+    return full_path
+
+
+# ======================
 # 手工用例和其他函数
 # ======================
 def build_system_prompt(fields, num):
@@ -878,123 +1068,6 @@ def export_excel(cases, project_name, module_name, test_type=""):
         df.to_excel(writer, sheet_name="测试用例", index=False)
 
     print(f"✅ 导出成功：{full_path}")
-    return full_path
-
-
-def generate_api_test_full_human(project_name: str, module_name: str, test_type: str = "",
-                                 num: int = 10, business_rules: str = "") -> Dict:
-    """口语化版 - 生成像人写的测试用例"""
-    is_valid, msg = validate_user_input(business_rules)
-    if not is_valid:
-        print(f"❌ 输入校验失败: {msg}")
-        return {"cases": [], "excel_path": None, "pytest_path": None}
-
-    db_rule = get_rule(project_name, module_name)
-
-    rules_list = []
-    if db_rule:
-        if db_rule.get('constraints'):
-            rules_list.append(db_rule.get('constraints'))
-    if business_rules:
-        rules_list.append(business_rules)
-
-    merged_rules = "\n".join(rules_list) if rules_list else business_rules
-    config = get_module_config(project_name, module_name)
-    url_path = config["url_path"] if config else f"/api/{module_name.lower().replace(' ', '_')}"
-
-    prompt = f"""你是测试工程师，请用口语化的方式生成测试用例。
-
-【项目】{project_name}
-【模块】{module_name}
-【业务规则】{merged_rules}
-【接口地址】{url_path}
-
-【口语化要求】
-- 用"点了会不会"、"输错了提不提示"这种表达
-- 操作步骤用 1. 2. 3. 写清楚
-- 预期结果简短直接
-
-【输出格式】JSON数组
-
-示例：
-[
-  {{
-    "case_id": "TC_001",
-    "test_point": "正常新增合同",
-    "steps": "1. 获取正确token 2. 填写合同信息 3. 点击提交",
-    "expected": "提示操作成功"
-  }}
-]
-
-请生成 {num} 条左右的测试用例，覆盖正向和异常场景。
-
-直接输出JSON数组："""
-
-    try:
-        response = call_llm_with_retry(prompt)
-        content = response.content.strip()
-
-        cases = safe_json_parse(content)
-
-        unified_cases = []
-        for i, case in enumerate(cases, 1):
-            unified_cases.append({
-                "case_id": case.get("case_id", f"TC_{i:03d}"),
-                "test_point": case.get("test_point", case.get("title", "")),
-                "steps": case.get("steps", ""),
-                "expected": case.get("expected", ""),
-                "method": "POST",
-                "url": url_path,
-                "headers": {"Content-Type": "application/json"},
-                "body": {},
-                "assert": {},
-                "extract": {}
-            })
-
-        excel_path = export_human_excel(unified_cases, project_name, module_name, test_type)
-        return {"cases": unified_cases, "excel_path": excel_path, "pytest_path": None}
-
-    except Exception as e:
-        print(f"❌ 口语化版生成失败: {e}")
-        return {"cases": [], "excel_path": None, "pytest_path": None}
-
-
-def export_human_excel(cases: List[Dict], project_name: str, module_name: str, test_type: str = "") -> str:
-    """导出口语化版Excel - 4列格式"""
-    if not cases:
-        return None
-
-    next_num = get_next_file_number()
-    prefix = f"{clean_name(project_name)}_{clean_name(module_name)}_HUMAN"
-    if test_type and test_type.strip():
-        prefix = f"{clean_name(project_name)}_{clean_name(module_name)}_{clean_name(test_type)}_HUMAN"
-
-    filename = f"{prefix}_{next_num:03d}.xlsx"
-    full_path = os.path.join(data_folder_path, filename)
-
-    rows = []
-    for case in cases:
-        row = {
-            "用例编号": case.get("case_id", ""),
-            "测试点": case.get("test_point", ""),
-            "操作步骤": case.get("steps", ""),
-            "预期结果": case.get("expected", "")
-        }
-        rows.append(row)
-
-    df = pd.DataFrame(rows)
-    df = df[["用例编号", "测试点", "操作步骤", "预期结果"]]
-
-    with pd.ExcelWriter(full_path, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="测试用例", index=False)
-
-    try:
-        from fix_excel import fix_excel_format
-        fix_excel_format(full_path)
-    except:
-        pass
-
-    print(f"✅ 口语化版Excel导出成功：{full_path}")
     return full_path
 
 
