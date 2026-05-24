@@ -1,4 +1,4 @@
-# app.py - 统一入口（测试用例生成 + 测试点分析）
+# app.py - 统一入口（双模式：口语化版 + 专业化版）
 import os
 import re
 import json
@@ -8,8 +8,8 @@ import pandas as pd
 import time
 
 # 测试用例生成模块
-from common import clean_name
-from testcase_agent import generate_test_cases, export_excel, generate_api_test_full
+from common import clean_name, check_debug_mode
+from testcase_agent import generate_test_cases, export_excel, generate_api_test_full, generate_api_test_full_human
 from testcase_ai_agent import generate_ai_test_cases, export_ai_test_result
 from database import save_rule, list_all_rules, delete_rule, init_db
 from fix_excel import fix_excel_format
@@ -17,7 +17,9 @@ from fix_excel import fix_excel_format
 # 测试点分析模块
 from testpoint_agent import generate_test_points, check_info_completeness, generate_followup_prompt
 
+# ======================
 # 页面配置
+# ======================
 st.set_page_config(page_title="AI测试智能体", page_icon="🧪", layout="wide")
 
 # 初始化数据库
@@ -27,10 +29,20 @@ except Exception as e:
     st.error(f"数据库初始化失败: {e}")
 
 st.title("🧪 AI测试智能体")
-st.caption("支持：测试点分析 | 手工测试用例 | 接口自动化用例 | AI系统测试")
+st.caption("支持：测试点分析 | 手工测试用例 | 接口自动化用例（口语化版/专业化版） | AI系统测试")
 
 # ======================
-# 侧边栏（规则管理 - 仅对测试用例生成有用）
+# 调试模式显示（新增）
+# ======================
+if check_debug_mode():
+    st.sidebar.info("🔧 **调试模式已开启**\n\n日志将输出到控制台")
+else:
+    if st.sidebar.checkbox("🔧 开启调试模式", value=False, help="开启后将在控制台输出详细日志"):
+        os.environ["TEST_AGENT_DEBUG"] = "true"
+        st.rerun()
+
+# ======================
+# 侧边栏
 # ======================
 with st.sidebar:
     st.header("📖 使用说明")
@@ -43,15 +55,19 @@ with st.sidebar:
     ### 2️⃣ 手工测试用例
     - 生成Excel格式，包含测试步骤、断言关键词
     - 适用于手工执行或UI自动化
+    - **正向用例**：按业务场景设计（少）
+    - **反向用例**：按参数错误值累加（多）
 
     ### 3️⃣ 接口自动化用例
-    - 生成JSON + Excel + Pytest脚本
-    - 断言使用JSON路径格式（如 body.code=0）
-    - 可直接运行 pytest 命令执行
+    - 支持两种输出模式：
+      - **口语化版**：像人写的，适合交给老师/评审
+      - **专业化版**：结构化数据，适合自动化测试
+    - **正向用例优先级P0**，其他P2
 
     ### 4️⃣ AI/大模型测试
     - 五大维度：功能、准确性、鲁棒性、用户体验、安全
     - 生成四维分析报告 + 测试用例
+    - 安全用例优先级P0
     """)
     st.divider()
 
@@ -96,13 +112,13 @@ mode = st.radio(
 )
 
 # ======================
-# 公共输入（项目名称、模块名称）
+# 公共输入
 # ======================
 col1, col2 = st.columns(2)
 with col1:
-    project = st.text_input("📁 项目名称", placeholder="例如：携程旅行 / tpshop商城 / Python学习助手")
+    project = st.text_input("📁 项目名称", placeholder="例如：携程旅行 / 客达天下 / Python学习助手")
 with col2:
-    module = st.text_input("📂 模块名称", placeholder="例如：酒店搜索 / 登录 / 智能体考试")
+    module = st.text_input("📂 模块名称", placeholder="例如：酒店搜索 / 新增课程 / 登录")
 
 # ======================
 # 模式1：测试点分析
@@ -111,7 +127,6 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
     st.divider()
     st.subheader("📋 测试点分析")
 
-    # 初始化 session_state
     if "tp_step" not in st.session_state:
         st.session_state.tp_step = "input"
     if "tp_original_input" not in st.session_state:
@@ -121,7 +136,6 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
     if "tp_followup_answers" not in st.session_state:
         st.session_state.tp_followup_answers = {}
 
-    # 输入界面
     if st.session_state.tp_step == "input":
         rules = st.text_area(
             "📝 业务规则（可选，输入越详细生成越准）",
@@ -134,12 +148,10 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
             if not project or not module:
                 st.error("❌ 请填写项目名称和模块名称")
             else:
-                # 检查信息完整性
                 with st.spinner("🔍 正在分析信息完整性..."):
                     need_followup, questions = check_info_completeness(project, module, rules)
 
                 if need_followup and not rules:
-                    # 进入追问模式
                     st.session_state.tp_step = "followup"
                     st.session_state.tp_original_input = {
                         "project": project,
@@ -150,7 +162,6 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
                     st.session_state.tp_followup_answers = {}
                     st.rerun()
                 else:
-                    # 直接生成
                     with st.spinner("🤖 AI正在生成测试点，请稍候..."):
                         try:
                             content, error = generate_test_points(project, module, rules)
@@ -158,14 +169,10 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
                                 st.error(f"❌ {error}")
                             else:
                                 st.success(f"✅ 生成成功！共 {len(content)} 字符")
-
-                                # 预览
                                 st.markdown("### 📄 预览")
                                 st.markdown(content[:2000])
                                 if len(content) > 2000:
                                     st.caption(f"... 还有 {len(content) - 2000} 字符，请下载完整文件查看")
-
-                                # 下载
                                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                                 filename = f"{project}_{module}_测试点_{timestamp}.md"
                                 filename = re.sub(r'[\\/*?:"<>|]', '', filename)
@@ -181,26 +188,20 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
                         except Exception as e:
                             st.error(f"❌ 生成失败：{e}")
 
-    # 追问界面
     elif st.session_state.tp_step == "followup":
         st.subheader("📋 请补充以下信息")
         st.caption("系统检测到信息不够完整，请回答以下问题，补充后会自动生成测试点")
-
         answers = {}
         for i, q in enumerate(st.session_state.tp_followup_questions):
             answers[q] = st.text_area(f"**问题 {i + 1}:** {q}", key=f"tp_followup_q_{i}", height=80)
-
         col_btn1, col_btn2 = st.columns([1, 5])
         with col_btn1:
             if st.button("↩️ 返回修改", use_container_width=True):
                 st.session_state.tp_step = "input"
                 st.rerun()
-
         with col_btn2:
             if st.button("✅ 补充完成，生成测试点", type="primary", use_container_width=True):
-                # 合并原输入和追问回答
                 full_rules = generate_followup_prompt(st.session_state.tp_original_input, answers)
-
                 with st.spinner("🤖 AI正在生成测试点，请稍候..."):
                     try:
                         content, error = generate_test_points(
@@ -213,12 +214,10 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
                             st.session_state.tp_step = "input"
                         else:
                             st.success(f"✅ 生成成功！共 {len(content)} 字符")
-
                             st.markdown("### 📄 预览")
                             st.markdown(content[:2000])
                             if len(content) > 2000:
                                 st.caption(f"... 还有 {len(content) - 2000} 字符，请下载完整文件查看")
-
                             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                             filename = f"{st.session_state.tp_original_input['project']}_{st.session_state.tp_original_input['module']}_测试点_{timestamp}.md"
                             filename = re.sub(r'[\\/*?:"<>|]', '', filename)
@@ -231,7 +230,6 @@ if mode == "📋 测试点分析（输出Markdown，可转XMind）":
                                 key=f"download_tp_followup_{timestamp}"
                             )
                             st.caption("💡 下载后可直接复制到XMind粘贴")
-
                             st.session_state.tp_step = "input"
                     except Exception as e:
                         st.error(f"❌ 生成失败：{e}")
@@ -281,7 +279,10 @@ elif mode == "📝 手工测试用例（输出Excel）":
 
             if cases:
                 filepath = export_excel(cases, project, module, test_type_value)
-                fix_excel_format(filepath)
+                try:
+                    fix_excel_format(filepath)
+                except:
+                    pass
 
                 progress_bar.progress(100)
                 status_text.text("✅ 生成完成！")
@@ -310,25 +311,33 @@ elif mode == "📝 手工测试用例（输出Excel）":
                 st.warning("⚠️ 未能生成有效的测试用例，请调整业务规则重试")
 
 # ======================
-# 模式3：接口自动化用例
+# 模式3：接口自动化用例（双模式）
 # ======================
 elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
     st.divider()
-    st.subheader("📊 用例数量配置")
 
+    # 输出模式选择
+    output_style = st.radio(
+        "📌 输出模式",
+        ["📝 口语化版（适合老师/评审，像人写的）", "🚀 专业化版（适合数据驱动，生成Pytest脚本）"],
+        horizontal=True,
+        help="口语化版：描述口语化，适合交给老师评审；专业化版：结构化数据，可直接用于自动化测试"
+    )
+
+    st.subheader("📊 用例数量配置")
     col1, col2 = st.columns(2)
     with col1:
         test_type = st.selectbox("测试类型",
                                  ["功能测试", "安全测试", "性能测试", "兼容性测试", "稳定性测试", "异常测试", "全类型"])
     with col2:
-        case_num = st.number_input("生成数量", 1, 40, 10)
+        case_num = st.number_input("期望数量", 1, 30, 10, help="AI会根据业务复杂度自行判断，不强制凑数")
 
     st.markdown("### 📝 业务规则（可选）")
     st.caption("规则越详细，用例越精准。优先级：数据库规则 > 这里输入的规则 > 默认规则")
     business_rules = st.text_area(
         "业务规则",
         height=150,
-        placeholder="示例：\n- 登录只需要用户名、密码、验证码，验证码固定为8888"
+        placeholder="示例：\n- 登录只需要用户名、密码、验证码，验证码固定为8888\n- 课程名称1-64个字符\n- 价格必须是正整数"
     )
 
     if st.button("🚀 生成接口用例", type="primary", use_container_width=True):
@@ -342,18 +351,17 @@ elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
             progress_bar = st.progress(0)
             status_text = st.empty()
 
-            with st.spinner(f"正在生成 {case_num} 条接口自动化用例..."):
-                status_text.text("🔌 正在分析接口规则...")
+            with st.spinner("正在生成接口用例..."):
+                status_text.text("📝 正在分析业务规则...")
                 progress_bar.progress(10)
 
-                result = generate_api_test_full(project, module, test_type_value, case_num, business_rules)
-
-                progress_bar.progress(50)
-                status_text.text("📊 正在导出Excel...")
-                time.sleep(0.3)
+                if "口语化版" in output_style:
+                    result = generate_api_test_full_human(project, module, test_type_value, case_num, business_rules)
+                else:
+                    result = generate_api_test_full(project, module, test_type_value, case_num, business_rules)
 
                 progress_bar.progress(80)
-                status_text.text("🐍 正在生成Pytest脚本...")
+                status_text.text("📊 正在导出...")
                 time.sleep(0.3)
 
                 progress_bar.progress(100)
@@ -363,9 +371,9 @@ elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
                 status_text.empty()
 
             if result["cases"]:
-                st.success(f"✅ 接口用例已生成，共 {len(result['cases'])} 条")
+                st.success(f"✅ 用例已生成，共 {len(result['cases'])} 条")
 
-                # 下载区域 - 独立容器，避免刷新导致按钮消失
+                # 下载区域
                 download_container = st.container()
                 with download_container:
                     st.markdown("### 📥 下载文件")
@@ -376,7 +384,7 @@ elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
                             with open(result["excel_path"], "rb") as f:
                                 excel_data = f.read()
                             st.download_button(
-                                label="📥 下载Excel用例 (.xlsx)",
+                                label="📥 下载Excel用例",
                                 data=excel_data,
                                 file_name=os.path.basename(result["excel_path"]),
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -389,7 +397,7 @@ elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
                             with open(result["pytest_path"], "r", encoding="utf-8") as f:
                                 pytest_data = f.read()
                             st.download_button(
-                                label="🐍 下载Pytest脚本 (.py)",
+                                label="🐍 下载Pytest脚本",
                                 data=pytest_data,
                                 file_name=os.path.basename(result["pytest_path"]),
                                 mime="text/x-python",
@@ -397,15 +405,18 @@ elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
                                 key=f"download_api_pytest_{int(time.time())}"
                             )
 
-                # 预览用例（不与下载按钮共用）
-                st.subheader("📋 接口用例预览")
-                preview_df = pd.DataFrame(result["cases"])[["case_id", "title", "method", "url"]].head(5)
+                # 预览用例
+                st.subheader("📋 用例预览（前5条）")
+                if "口语化版" in output_style:
+                    preview_df = pd.DataFrame(result["cases"])[["case_id", "test_point", "steps", "expected"]].head(5)
+                else:
+                    preview_df = pd.DataFrame(result["cases"])[["case_id", "title", "method", "url"]].head(5)
                 st.dataframe(preview_df, use_container_width=True)
 
                 if result["pytest_path"]:
                     st.info(f"💡 运行测试：`pytest {os.path.basename(result['pytest_path'])} -v`")
             else:
-                st.warning("⚠️ 未能生成有效的接口用例，请调整业务规则重试")
+                st.warning("⚠️ 未能生成有效的用例，请调整业务规则重试")
 
 # ======================
 # 模式4：AI/大模型测试
@@ -463,7 +474,6 @@ else:  # mode == "🤖 AI/大模型测试（五大维度分析）"
                         progress_bar.progress(int(progress * 100))
                         status_text.text(message)
 
-
                     result = generate_ai_test_cases(
                         project, module, st.session_state.ai_description, limits,
                         ("需要" in need_analysis), st.session_state.ai_business_rules,
@@ -500,4 +510,4 @@ else:  # mode == "🤖 AI/大模型测试（五大维度分析）"
                     st.warning("⚠️ 未能生成有效的测试用例")
 
 st.divider()
-st.caption("🧪 AI测试智能体 | 支持测试点分析 / 手工用例 / 接口用例 / AI测试 | 测试点输出Markdown可转XMind")
+st.caption("🧪 AI测试智能体 | 支持测试点分析 / 手工用例 / 接口用例（口语化版+专业化版）/ AI测试")
