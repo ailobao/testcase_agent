@@ -319,9 +319,9 @@ elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
     # 输出模式选择
     output_style = st.radio(
         "📌 输出模式",
-        ["📝 口语化版（适合老师/评审，像人写的）", "🚀 专业化版（适合数据驱动，生成Pytest脚本）"],
+        ["📝 apifox版（给apifox用的）", "🚀 专业化版（适合数据驱动，生成Pytest脚本）"],
         horizontal=True,
-        help="口语化版：描述口语化，适合交给老师评审；专业化版：结构化数据，可直接用于自动化测试"
+        help="apifox版,给apifox用做测试数据做数据驱动；专业化版：结构化数据，可直接用于自动化测试"
     )
 
     st.subheader("📊 用例数量配置")
@@ -330,7 +330,7 @@ elif mode == "🚀 接口自动化用例（输出Excel + Pytest脚本）":
         test_type = st.selectbox("测试类型",
                                  ["功能测试", "安全测试", "性能测试", "兼容性测试", "稳定性测试", "异常测试", "全类型"])
     with col2:
-        case_num = st.number_input("期望数量", 1, 40, 10, help="AI会根据业务复杂度自行判断，不强制凑数")
+        case_num = st.number_input("期望数量", 1, 100, 10, help="AI会根据业务复杂度自行判断，不强制凑数")
 
     st.markdown("### 📝 业务规则（可选）")
     st.caption("规则越详细，用例越精准。优先级：数据库规则 > 这里输入的规则 > 默认规则")
