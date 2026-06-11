@@ -287,6 +287,13 @@ class APITestAgent(BaseAgent):
             if not cases:
                 return []
 
+        # ===== 登录模块不需要 Token 异常用例（AI 提示词没有豁免逻辑） =====
+        if is_login_module:
+            before = len(cases)
+            cases = [c for c in cases if "Token" not in c.get("title", "")]
+            if len(cases) < before:
+                main_logger.info(f"登录模块过滤掉 {before - len(cases)} 条 Token 异常用例")
+
         # 后处理：补充默认字段
         for case in cases:
             if not case.get("headers"):

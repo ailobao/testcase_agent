@@ -5,49 +5,66 @@ from dotenv import load_dotenv
 # 加载 .env
 load_dotenv()
 
-# 如果在 Streamlit Cloud 运行，也读取 st.secrets（它不会自动注入 os.environ）
-try:
-    import streamlit as st
-    _secrets = dict(st.secrets)
-except Exception:
-    _secrets = {}
 
 def _env(key: str, default: str = "") -> str:
-    """优先 os.environ（.env/系统变量），其次 st.secrets（Streamlit Cloud），最后 default"""
-    return os.getenv(key) or _secrets.get(key) or default
+    """获取环境变量：os.environ -> st.secrets -> default（st.secrets 在 Streamlit Cloud 上才可用）"""
+    val = os.getenv(key)
+    if val:
+        return val
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
 
 # ======================
-# LLM 配置
+# LLM 配置（懒加载，通过 __getattr__）
 # ======================
-LLM_MODEL = _env("LLM_MODEL", "qwen-max")
-LLM_API_KEY = _env("LLM_API_KEY") or _env("DASHSCOPE_API_KEY")
-LLM_BASE_URL = _env("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
-LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "16000"))
+# 以下常量通过模块 __getattr__ 延迟解析，确保 Streamlit 运行时已初始化
+# （在 Streamlit Cloud 上，st.secrets 在模块 import 时尚未就绪）
+_LLM_DEFAULTS = {
+    "LLM_MODEL": "qwen-max",
+    "LLM_API_KEY": "",  # 使用 _resolve_api_key 处理
+    "LLM_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "LLM_TEMPERATURE": "0.1",
+    "LLM_MAX_TOKENS": "16000",
+}
+
+
+def _resolve_api_key() -> str:
+    """解析 LLM API Key：LLM_API_KEY -> DASHSCOPE_API_KEY -> ''"""
+    return _env("LLM_API_KEY") or _env("DASHSCOPE_API_KEY")
+
+
+def __getattr__(name):
+    if name == "LLM_API_KEY":
+        return _resolve_api_key()
+    if name in _LLM_DEFAULTS:
+        if name in ("LLM_TEMPERATURE", "LLM_MAX_TOKENS"):
+            return type(_LLM_DEFAULTS[name])(os.getenv(name, _LLM_DEFAULTS[name]))
+        return _env(name, _LLM_DEFAULTS[name])
+    if name in ("LLM_RETRY_COUNT", "LLM_RETRY_DELAY", "LLM_TIMEOUT",
+                "MAX_CONCURRENT_TASKS", "MAX_WORKERS",
+                "DEFAULT_CASE_LIMIT", "MAX_CASE_LIMIT"):
+        return type(_NON_LLM_DEFAULTS[name])(os.getenv(name, _NON_LLM_DEFAULTS[name]))
+    if name == "DEBUG_MODE":
+        return os.getenv("TEST_AGENT_DEBUG", "false").lower() == "true"
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # ======================
-# LLM 重试配置（新增）
+# LLM 重试配置
 # ======================
-LLM_RETRY_COUNT = int(os.getenv("LLM_RETRY_COUNT", "3"))
-LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1.0"))
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))
-
-# ======================
-# 并发配置（新增）
-# ======================
-MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "3"))
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", "3"))
-
-# ======================
-# 用例数量配置（新增）
-# ======================
-DEFAULT_CASE_LIMIT = int(os.getenv("DEFAULT_CASE_LIMIT", "10"))
-MAX_CASE_LIMIT = int(os.getenv("MAX_CASE_LIMIT", "50"))
-
-# ======================
-# 调试模式
-# ======================
-DEBUG_MODE = os.getenv("TEST_AGENT_DEBUG", "false").lower() == "true"
+_NON_LLM_DEFAULTS = {
+    "LLM_RETRY_COUNT": "3",
+    "LLM_RETRY_DELAY": "1.0",
+    "LLM_TIMEOUT": "30",
+    "MAX_CONCURRENT_TASKS": "3",
+    "MAX_WORKERS": "3",
+    "DEFAULT_CASE_LIMIT": "10",
+    "MAX_CASE_LIMIT": "50",
+}
 
 # ======================
 # 路径配置
