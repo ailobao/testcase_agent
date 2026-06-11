@@ -52,8 +52,8 @@ class JudgeLLM:
 
         from deepeval.models.base_model import DeepEvalBaseLLM
 
-        api_key = os.getenv("DASHSCOPE_API_KEY")
-        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 固定 DashScope
+        api_key = os.getenv("JUDGE_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+        base_url = os.getenv("JUDGE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
         model_name = os.getenv("JUDGE_MODEL", "qwen3.7-plus")
 
         class _JudgeLLM(DeepEvalBaseLLM):
@@ -86,11 +86,11 @@ class JudgeLLM:
 # ====================== 直调 Judge 模式专用 ======================
 
 def create_deepseek_judge(model: str = None) -> ChatOpenAI:
-    """创建 DashScope Judge LLM（固定 DashScope）"""
+    """创建 Judge LLM（支持通过环境变量切换 API）"""
     return ChatOpenAI(
         model=model or os.getenv("JUDGE_MODEL", "qwen3.7-plus"),
-        api_key=os.getenv("DASHSCOPE_API_KEY"),
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 固定 DashScope
+        api_key=os.getenv("JUDGE_API_KEY") or os.getenv("DASHSCOPE_API_KEY"),
+        base_url=os.getenv("JUDGE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         temperature=0,
         max_tokens=2000
     )

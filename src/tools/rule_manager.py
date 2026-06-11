@@ -201,3 +201,11 @@ def get_all_projects() -> List[str]:
     rows = cursor.fetchall()
     conn.close()
     return [row[0] for row in rows]
+
+
+# ====== 自动初始化（首次部署时建库 + 写入种子数据） ======
+if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) < 1024:
+    from scripts.init_db import init_all_modules
+    init_db()
+    init_all_modules()
+    logger.info("✅ 数据库自动初始化完成（首次部署）")

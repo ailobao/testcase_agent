@@ -47,8 +47,8 @@ logger = logging.getLogger(__name__)
 # Judge 配置
 # ======================
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", "qwen3.7-plus")
-JUDGE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
-JUDGE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+JUDGE_API_KEY = os.getenv("JUDGE_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+JUDGE_BASE_URL = os.getenv("JUDGE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 judge_llm = ChatOpenAI(
     model=JUDGE_MODEL,
