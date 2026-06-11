@@ -127,5 +127,4 @@ def main():
         testpoint_page.render()
 
 
-if __name__ == "__main__":
-    main()
+main()
