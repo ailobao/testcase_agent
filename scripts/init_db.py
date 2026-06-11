@@ -41,7 +41,19 @@ def init_all_modules():
     )
     print("✅ 客达天下/生成验证码")
 
-    # 3. 新增课程
+    # 3. 注册
+    save_rule(
+        project_name="客达天下",
+        module_name="注册",
+        input_fields='["username", "password", "phone", "code", "uuid"]',
+        required_fields='["username", "password", "phone", "code", "uuid"]',
+        url_path="/api/register",
+        default_body='{"username": "newuser", "password": "123456", "phone": "13800138000", "code": "8888", "uuid": "test-uuid-123"}',
+        constraints="用户名3-20字符，密码6-20字符，手机号11位，验证码固定8888"
+    )
+    print("✅ 客达天下/注册")
+
+    # 4. 新增课程
     save_rule(
         project_name="客达天下",
         module_name="新增课程",

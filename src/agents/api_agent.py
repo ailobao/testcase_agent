@@ -67,11 +67,11 @@ class APITestAgent(BaseAgent):
 
         # 4. 判断请求方法和模块类型
         method = self._get_method_from_url(url_path, module_name)
-        is_login_module = "login" in url_path.lower() or "登录" in module_name
+        is_login_module = "login" in url_path.lower() or "登录" in module_name or "注册" in module_name
 
         main_logger.info(f"URL: {url_path}, 方法: {method}")
         main_logger.info(f"必填参数: {required_fields}")
-        main_logger.info(f"登录模块: {is_login_module}")
+        main_logger.info(f"免Token模块: {is_login_module}")
 
         all_cases = []
         code_count = 0
@@ -287,7 +287,7 @@ class APITestAgent(BaseAgent):
             if not cases:
                 return []
 
-        # ===== 登录模块不需要 Token 异常用例（AI 提示词没有豁免逻辑） =====
+        # ===== 登录/注册等免Token模块不需要 Token 异常用例 =====
         if is_login_module:
             before = len(cases)
             cases = [c for c in cases if "Token" not in c.get("title", "")]

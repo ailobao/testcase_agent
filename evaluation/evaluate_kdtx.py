@@ -129,6 +129,7 @@ def calculate_expected_count(module_name: str) -> int:
 # 模块列表（不预置数量，动态计算）
 KDTX_MODULES = [
     {"name": "登录", "description": "用户登录功能"},
+    {"name": "注册", "description": "用户注册功能"},
     {"name": "生成验证码", "description": "生成验证码图片"},
     {"name": "新增课程", "description": "新增课程管理"},
     {"name": "查询课程列表", "description": "查询课程列表"},
