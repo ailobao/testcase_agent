@@ -5,12 +5,23 @@ from dotenv import load_dotenv
 # 加载 .env
 load_dotenv()
 
+# 如果在 Streamlit Cloud 运行，也读取 st.secrets（它不会自动注入 os.environ）
+try:
+    import streamlit as st
+    _secrets = dict(st.secrets)
+except Exception:
+    _secrets = {}
+
+def _env(key: str, default: str = "") -> str:
+    """优先 os.environ（.env/系统变量），其次 st.secrets（Streamlit Cloud），最后 default"""
+    return os.getenv(key) or _secrets.get(key) or default
+
 # ======================
 # LLM 配置
 # ======================
-LLM_MODEL = os.getenv("LLM_MODEL", "qwen-max")
-LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+LLM_MODEL = _env("LLM_MODEL", "qwen-max")
+LLM_API_KEY = _env("LLM_API_KEY") or _env("DASHSCOPE_API_KEY")
+LLM_BASE_URL = _env("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "16000"))
 
