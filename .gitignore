@@ -35,3 +35,9 @@ testpoint_output/
 .deepeval/
 evaluation/.deepeval/
 .pytest_cache/
+
+# 简历生成脚本
+李强*
+gen_resume*
+_optimize_resume*
+scripts/resume_optimizer.py
