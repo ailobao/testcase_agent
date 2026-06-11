@@ -1,10 +1,37 @@
-﻿.streamlit/
+.streamlit/
 .env
 .idea/
 __pycache__/
+*.pyc
 *.db
 *.xlsx
 *_evaluation*.json
 data/*.xlsx
 !data/.gitkeep
 testpoint_gen.log
+.llm_cache/
+*.cache/
+
+# 简历面试相关
+简历*
+面试题库*
+项目代码结构解析*
+
+# Claude 相关
+CLAUDE.md
+.claude/
+
+# 生成的文件
+logs/
+pytest_scripts/
+test_report.html
+reports/
+data_driver/
+evaluation/data/
+knowledge_base/
+testpoint_output/
+
+# DeepEval 生成
+.deepeval/
+evaluation/.deepeval/
+.pytest_cache/

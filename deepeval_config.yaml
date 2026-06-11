@@ -1,0 +1,13 @@
+# deepeval_config.yaml
+model:
+  provider: "openai"
+  name: "qwen3.7-max"
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  api_key: "${DASHSCOPE_API_KEY}"
+
+evaluations:
+  - name: "test_case_quality"
+    metrics:
+      - name: "GEval"
+        threshold: 0.7
+
