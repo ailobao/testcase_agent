@@ -1,10 +1,12 @@
 """
-Streamlit Cloud 入口 — 执行 src/ui/app.py
+Streamlit Cloud 入口 — 委托执行 src/ui/app.py
 """
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, root)
+os.chdir(root)
 
-# 导入即执行（Streamlit 脚本在模块级别运行）
-import src.ui.app
+import runpy
+runpy.run_path(os.path.join(root, "src", "ui", "app.py"), run_name="__main__")
