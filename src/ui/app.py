@@ -55,47 +55,6 @@ def render_sidebar():
         """, language="text")
 
         st.divider()
-
-        # 显示目录结构
-        with st.expander("📁 目录结构"):
-            st.code("""
-test_case_agent/
-├── data/           # Excel 文件
-├── data_driver/    # JSON 数据驱动
-├── pytest_scripts/ # Pytest 脚本
-├── logs/           # 日志文件
-├── testpoint_output/ # 测试点输出
-└── src/            # 源代码
-            """)
-
-        # 显示提示词预热状态
-        with st.expander("⚡ 系统状态"):
-            try:
-                from src.core.prompt_loader import prompt_loader
-                status = prompt_loader.get_warmup_status()
-                st.caption(f"✅ 模板已缓存: {status.get('loaded_templates', 0)}/{len(status.get('missing_templates', []) or []) + status.get('loaded_templates', 0)}")
-                if status.get('missing_templates'):
-                    st.caption(f"⚠️ 缺失模板: {', '.join(status['missing_templates'])}")
-                if status.get('issues'):
-                    st.caption(f"⚠️ 配置问题: {len(status['issues'])} 项")
-            except Exception:
-                st.caption("⚡ 提示词系统就绪")
-
-            # 显示 LLM 缓存状态
-            try:
-                from src.utils.llm_cache import get_cache_stats
-                stats = get_cache_stats()
-                total = stats.get("total_requests", 0)
-                if total > 0:
-                    st.caption(f"💾 缓存命中率: {stats['hit_rate_percent']} ({stats['hit_count']}/{total})")
-                else:
-                    st.caption("💾 缓存: 就绪（尚无请求）")
-                st.caption(f"📦 磁盘缓存: {stats.get('disk_cache_size', 0)} 文件 | 内存: {stats.get('memory_cache_size', 0)} 条")
-            except Exception:
-                pass
-                st.caption("⚡ 系统就绪")
-
-        st.divider()
         st.caption("🧪 AI测试智能体 v2.0")
         st.caption("支持接口自动化 | 手工测试 | AI系统测试 | 测试点分析")
 

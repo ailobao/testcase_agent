@@ -1,4 +1,6 @@
-.streamlit/
+# Streamlit 配置（只排除敏感文件，config.toml 需提交到仓库）
+.streamlit/secrets.toml
+.streamlit/credentials.toml
 .env
 .idea/
 __pycache__/
@@ -14,12 +16,16 @@ testpoint_gen.log
 
 # 简历面试相关
 简历*
+自我介绍*
 面试题库*
+面试准备*
 项目代码结构解析*
+自我*
 
 # Claude 相关
 CLAUDE.md
 .claude/
+.vscode/
 
 # 生成的文件
 logs/
