@@ -17,6 +17,21 @@ st.set_page_config(
     layout="wide"
 )
 
+# 隐藏右下角工具栏(Manage app/Settings等)
+st.markdown(
+    "<style>"
+    "div[data-testid='stToolbar'], "
+    "div[data-testid='stStatusWidget'], "
+    "div.stToolbar, "
+    "button[kind='toolbar'], "
+    "button[title='Manage app'], "
+    "button[title='Settings'], "
+    "#MainMenu { display: none !important; } "
+    "footer { visibility: hidden !important; }"
+    "</style>",
+    unsafe_allow_html=True,
+)
+
 # 导入所有页面
 from src.ui.pages import api_page, manual_page, ai_page, testpoint_page
 
