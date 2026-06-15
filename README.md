@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧪 TestAI — AI驱动的测试用例生成平台
+# 🧪 TestAI — AI驱动的测试用例生成工具
 
 [![Streamlit App](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://ailobao.streamlit.app/)
 [![DeepSeek](https://img.shields.io/badge/DeepSeek-V4%20Flash-blue?style=for-the-badge)]()
