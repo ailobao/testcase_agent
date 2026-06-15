@@ -17,17 +17,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# 隐藏右下角工具栏(Manage app/Settings等)
+# 隐藏 Streamlit 所有工具栏/状态按钮(Manage app/Settings/Deploy等)
 st.markdown(
     "<style>"
     "div[data-testid='stToolbar'], "
     "div[data-testid='stStatusWidget'], "
-    "div.stToolbar, "
+    "div[data-testid='stBottom'], "
+    "div[data-testid='stBottomBlock'], "
+    ".stAppDeployButton, "
+    ".stDeployButton, "
     "button[kind='toolbar'], "
     "button[title='Manage app'], "
     "button[title='Settings'], "
-    "#MainMenu { display: none !important; } "
-    "footer { visibility: hidden !important; }"
+    "button[title='Deploy'], "
+    "#MainMenu, "
+    "footer { display: none !important; }"
     "</style>",
     unsafe_allow_html=True,
 )
